@@ -1,0 +1,204 @@
+
+此MCU_SDK是根据涂鸦开发平台上定义的产品功能，自动生成的MCU代码。在此基础上进行修改、补充，可快速完成MCU程序。
+
+MCU_SDK使用指导文档链接：
+https://docs.tuya.com/zh/iot/device-development/access-mode-mcu/wifi-general-solution/software-reference-wifi/overview-of-migrating-tuyas-mcu-sdk?id=K9hhi0xr5vll9
+
+
+开发步骤：
+
+1：需要根据产品实际情况（重置wifi按钮和wifi状态指示灯处理方式、是否支持MCU升级等）进行配置，请在protocol.h内修改此配置；
+
+2：移植此MCU_SDK，请查看protocol.c文件内的移植步骤,并正确完成移植。移植后，请完成数据下发处理、数据上报部分的代码，即可完成全部wifi功能。
+
+文件概览：
+此MCU_SDK包括7个文件：
+	
+（1）system.c和system.h 是wifi通用协议解析实现代码，无特殊情况，用户不需要修改。
+	
+（2）mcu_api.c和mcu_api.h ，用户需要主动调用的函数都在该文件内。
+	
+（3）protocol.h和protocol.c ，接收到模块数据后对数据的处理函数，可在此文件内找到，需要用户修改完善相关功能。protocol.h 和protocol.c文件内有详细修改说明，请仔细阅读。
+	
+（4）wifi.h文件包含了以上所有的.h文件，并定义了以上所有文件中的函数里用到的宏定义，使用此SDK相关函数，请#include "wifi.h"。
+
+
+protocol.h中开启天气服务；
+开启该宏,并在protocol.c文件内weather_open_return_handle与weather_data_user_handle两个用户处理函数中实现显示等代码
+我将串口数据接收缓存区和处理缓存区改成了32，48比原来大了一倍！
+protocol.c中选择需要哪些天气服务数据，在protocol.h中WEATHER_CHOOSE_CNT 填上数量
+
+//#define         VOICE_MODULE_PROTOCOL_ENABLE           //开启语音模组相关协议功能
+暂未开
+
+                        1:dp数据点序列号重新定义
+          **此为自动生成代码,如在开发平台有相关修改请重新下载MCU_SDK**         
+******************************************************************************/
+//设备控制(可下发可上报)
+//备注:
+#define DPID_CONTROL 2
+//剩余电量(只上报)
+//备注:
+#define DPID_RESIDUAL_ELECTRICITY 4
+//开启百分比控制(可下发可上报)
+//备注:
+#define DPID_PERCENT_CONTROL 7
+//校准(可下发可上报)
+//备注:
+#define DPID_CALIBRATION 15
+//左窗户控制(可下发可上报)
+//备注:
+#define DPID_LEFT_CONTROL 101
+//左窗户百分比(可下发可上报)
+//备注:
+#define DPID_LEFT_PERCENT 102
+//左窗户校准(可下发可上报)
+//备注:
+#define DPID_LEFT_CALIBRATION 103
+//右窗户控制(可下发可上报)
+//备注:
+#define DPID_RIGHT_CONTROL 104
+//右窗户百分比(可下发可上报)
+//备注:
+#define DPID_RIGHT_PERCENT 105
+//右窗户校准(可下发可上报)
+//备注:
+#define DPID_RIGHT_CALIBRATION 106
+//窗帘控制(可下发可上报)
+//备注:
+#define DPID_CURTAIN_CONTROL 107
+//窗帘百分比(可下发可上报)
+//备注:
+#define DPID_CURTAIN_PERCENT 108
+//窗帘校准(可下发可上报)
+//备注:
+#define DPID_CURTAIN_CALIBRATION 109
+
+
+=============================================
+https://developer.tuya.com/cn/docs/iot/device-development/tuya-development-board-kit/tuya-sandwich-evaluation-kits/development-guide/arduino-implements-simple-demo?id=K96yyxgetltzj
+删除了两个const其它等报错！
+
+328的I2C是 A4 A5 留下预留给光线传感器 D2 D3为外部中断预留下来说不定按键要用
+A0 检测电量
+A1 A2 电机1
+D4 D5 左右位置干簧管
+
+
+arduino中要使用其它包含cpp的.h头文件里定义的变量 extern  类型 变量名 建议单独写个头文件定义全局用的常量，变量
+protocol.c
+dp_download_control_handle 开窗函数已写
+
+参考https://oshwhub.com/xiezhaoyan/wen-shi-du-ji-lu-yi
+配网状态返回
+switch(mcu_get_wifi_work_state())
+{
+case SMART_CONFIG_STATE:
+break;
+case AP_STATE:
+break;
+case WIFI_NOT_CONNECTED:
+break;
+case WIFI_CONNECTED:
+break;
+default:break;
+}
+配网按键 mcu_set_wifi_mode(SMART_CONFIG);
+
+天气数据获取参考林康康的程序 https://github.com/lin-kangkang/temperature-and-humidity-senso-tuya-mcur
+"pm25"》115 "aqi"》150则不开窗，"windLevel"风级》5 不开窗
+"condition" 属于有雨雪类型的都不开窗！
+天亮后开窗获取格林时间 
+9:00 (9:00 AM) 北京时间 = 1:00 (1:00 AM) 格林威治标准时间
+18:00 (6:00 PM) 北京时间 = 10:00 (10:00 AM) 格林威治标准时间
+获取本地时间
+void mcu_get_system_time(void)
+并在protocol.c中 mcu_write_rtctime函数内完成时间的更新！
+
+
+空气质量等级 24小时PM2.5平均值标准值
+优： 0~35μg/m3
+良 ：35~75μg/m3
+轻度污染：75~115μg/m3
+中度污染 ：115~150μg/m3
+重度污染 ：150~250μg/m3
+严重污染 ：大于250μg/m3及以上
+
+AQI根据空气污染指数值范围分为6个级别，同时对应不同的空气质量评估、颜色及建议。大于150则不开窗！
+
+1、0-50一级-优-绿色，空气质量令人满意，基本无空气污染，各类人群可正常活动。
+
+2、51-100-二级-良-黄色，空气质量可接受，但某些污染物可能对极少数异常敏感人群健康有较弱影响，建议极少数异常敏感人群应减少户外活动。
+
+3、101-150-三级-轻度污染-橙色，易感人群症状有轻度加剧，健康人群出现刺激症状。建议儿童、老年人及心脏病、呼吸系统疾病患者应减少长时间、高强度的户外锻炼。
+
+4、151-200-四级-中度污染-红色，进一步加剧易感人群症状，可能对健康人群心脏、呼吸系统有影响，建议疾病患者避免长时间、高强度的户外锻练，一般人群适量减少户外运动。
+
+5、201-300-五级-重度污染-紫色，心脏病和肺病患者症状显著加剧，运动耐受力降低，健康人群普遍出现症状，建议儿童、老年人和心脏病、肺病患者应停留在室内，停止户外运动，一般人群减少户外运动。
+
+6、＞300-六级-严重污染-褐色，健康人群运动耐受力降低，有明显强烈症状，提前出现某些疾病，建议儿童、老年人和病人应当留在室内，避免体力消耗，一般人群应避免户外活动。
+===============================
+定时器0：delay()、millis()和micros()，如果设置了定时器0，以上函数将不可使用。
+
+
+定时器1：Arduino中的Servo库使用的定时器1，如果设置了定时器1，Servo库将不可使用。
+
+
+定时器2：tone()使用的定时器2，同理。
+下了个atmega328P的timer2库,试下
+#include <MsTimer2.h>               //定时器库的 头文件
+
+void flash()                        //中断处理函数，改变灯的状态
+{                        
+  static boolean output = HIGH;
+  digitalWrite(13, output);
+  output = !output;
+}
+
+void setup()
+{
+  pinMode(13, OUTPUT);
+
+  MsTimer2::set(500, flash);        // 中断设置函数，每 500ms 进入一次中断
+  MsTimer2::start();                //开始计时
+}
+
+事实证明是完全一样的，可以用1秒定时搞定！
+
+
+mcu_api.c要用的功能：：：：：：：：：：
+ * @brief  MCU获取系统时间,用于校对本地时钟
+ * @param  Null
+ * @return Null
+ * @note   MCU主动调用完成后在mcu_write_rtctime函数内校对rtc时钟
+ */
+void mcu_get_system_time(void)
+{
+    wifi_uart_write_frame(GET_LOCAL_TIME_CMD, MCU_TX_VER, 0);
+}
+
+ * @brief  打开模块时间服务通知
+ * @param[in] {time_type} 时间类型
+ * @ref       0x00: 格林时间
+ * @ref       0x01: 本地时间
+ * @return Null
+ * @note   MCU需要自行调用该功能
+ */
+void open_module_time_serve(unsigned char time_type)
+{
+    unsigned short send_len = 0;
+    send_len = set_wifi_uart_byte(send_len, 0x01);
+    send_len = set_wifi_uart_byte(send_len, time_type);
+    wifi_uart_write_frame(MODULE_EXTEND_FUN_CMD, MCU_TX_VER, send_len);
+}
+ * @brief  主动请求天气服务数据
+ * @param  Null
+ * @return Null
+ * @note   MCU需要自行调用该功能
+ */
+void request_weather_serve(void)
+{
+    unsigned short send_len = 0;
+    send_len = set_wifi_uart_byte(send_len, 0x03);
+    wifi_uart_write_frame(MODULE_EXTEND_FUN_CMD, MCU_TX_VER, send_len);
+}
