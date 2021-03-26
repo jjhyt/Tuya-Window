@@ -28,6 +28,7 @@
 3:请勿在中断/定时器中断内调用上报函数
 ******************************************************************************/
 #include "Arduino.h"
+#include "EEPROM.h"
 #include "wifi.h"
 #include "user.h"
 
@@ -264,8 +265,11 @@ static unsigned char dp_download_calibration_handle(const unsigned char value[],
     calibration = mcu_get_dp_download_bool(value,length);
     if(calibration == 0) {
         //校准程序关什么也不做
+        cali_int = 0;
     }else {
         //校准程序开：关窗状态下开窗，开窗状态就关窗，并记录下总秒数存入内存
+        cali_int = 1;
+        Serial.println("calibrationing");
     }
   
     //处理完DP数据后应有反馈
@@ -561,6 +565,7 @@ static unsigned char dp_download_curtain_calibration_handle(const unsigned char 
         : length:数据长度
 返回参数 : 成功返回:SUCCESS/失败返回:ERROR
 使用说明 : 可下发可上报类型,需要在处理完数据后上报处理结果至app
+自动模式函数，打开为自动模式开关窗
 *****************************************************************************/
 static unsigned char dp_download_control_mode_handle(const unsigned char value[], unsigned short length)
 {
@@ -571,9 +576,13 @@ static unsigned char dp_download_control_mode_handle(const unsigned char value[]
     
     control_mode = mcu_get_dp_download_bool(value,length);
     if(control_mode == 0) {
-        //开关关
+        //自动模式存入eeprom
+        auto_mode = 0;
+        EEPROM.write(4,auto_mode);
     }else {
-        //开关开
+        //
+        auto_mode = 1;
+        EEPROM.write(4,auto_mode);
     }
   
     //处理完DP数据后应有反馈
@@ -778,8 +787,8 @@ void mcu_write_rtctime(unsigned char time[])
    */
     if(time[0] == 1) {
         //正确接收到wifi模块返回的本地时钟数据使用Time[4]判断几点钟
-        time_int = time[4];
-        Serial.println(time_int);
+        localtime_int = time[4];
+        //Serial.println(localtime_int);
     }else {
         //获取本地时钟数据出错,有可能是当前wifi模块未联网
     }

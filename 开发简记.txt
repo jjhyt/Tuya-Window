@@ -79,7 +79,7 @@ protocol.c中选择需要哪些天气服务数据，在protocol.h中WEATHER_CHOOSE_CNT 填上数量
 https://developer.tuya.com/cn/docs/iot/device-development/tuya-development-board-kit/tuya-sandwich-evaluation-kits/development-guide/arduino-implements-simple-demo?id=K96yyxgetltzj
 删除了两个const其它等报错！
 
-328的I2C是 A4 A5 留下预留给光线传感器 D2 D3为外部中断预留下来说不定按键要用
+328的I2C是 A4 A5 留下预留给光线传感器 D2 D3为外部中断预留下来说不定按键要用 D2 433接收器用了
 A0 检测电量
 A1 A2 电机1
 D4 D5 左右位置干簧管
@@ -202,3 +202,5 @@ void request_weather_serve(void)
     send_len = set_wifi_uart_byte(send_len, 0x03);
     wifi_uart_write_frame(MODULE_EXTEND_FUN_CMD, MCU_TX_VER, send_len);
 }
+
+写入读取eeprom参考：https://www.geek-workshop.com/thread-2323-1-1.html

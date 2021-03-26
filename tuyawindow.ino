@@ -1,7 +1,7 @@
-//改LGT328芯片
+//本程序使用LGT328芯片
 //上报信息给涂鸦模组，测试正常，下一步是1.写手动开窗代码：关窗状态检测到右开关低电平则开窗（MOTO1_1高电平，MOTO1_2低电平），开窗状态检测到左边低电平则关窗（MOTO1_2高电平，MOTO1_1低电平）！（测试正常待硬件测试了）
 //2.实现APP控制代码(基本搞清楚了)！接入433模块代码，实现433控制开关窗！运行正常，代码实现收到5836257关窗5836258开窗
-//新增I2C模块tsl2561光线模块，如果能兼容应该其它i2C模块也没问题！开始接入A4-SDA,A5-SCL,demo测试OK，开始写代码
+//新增I2C模块tsl2561光线模块，如果能兼容应该其它i2C模块也没问题！开始接入A4-SDA,A5-SCL,demo测试OK，写代码测试OK
 //3.实现百分比控制，校准的运行时长数据和百分比数据作为全局变量，收到百分比控制数据后和已存在的百分比数据对比（开关控制时注意，关百分比数据存为0，开百分比数据存为100）
 //如果下发数据大于现存的百分比数据则开窗百分之它们想减之后的值*总校准秒数！反之就关窗这么多！
 //天气逻辑怎么实现呢？每5分钟同步一下时间，到早上9点如果空气质量还行，没有雨雪，风不大则开窗？，晚上6点如果窗户还开着就关窗？或者和光线传感器联动
@@ -28,17 +28,24 @@ float lastVcc = 3.3 ;           //电池电压
 uint16_t lastlux = 0;            //光线
 int batteryPcnt ;
 int ss = 0;                          //计秒变量
+int ss_cali;                         //用来放校准时的初始计秒数据
+int percent_int;                     //存放百分比开窗或关窗秒数
+
+double lux;    // 光线
+byte auto_open; //自动开窗执行0-未执行 1-已执行
+byte auto_close; //自动关窗执行0-未执行 1-已执行
 extern int moto_sta; //电机开关状态0=停1=开窗2=关窗
-extern int control_sta;//窗户开关状态0=关1=开
+extern int control_sta;//窗户开关状态0=关1=开2=百分比状态
 extern int percent_sta; //窗户百分比状态
 extern int weather_sta ;//天气状况是否适合开窗
 extern int wind_sta;//风力状况
 extern int aqi_sta;//aqi状况
 extern int pm25_sta;//pm25状况
-extern double lux;    // 光线
 extern int time_int;  //校准时间
 extern int percent_yun; //云端百分比，在main和本地百分比状态同步
-
+extern int cali_int;  //校准状态，0-无动作，1-校准准备，2-开始校准，3-校准中
+extern byte auto_mode;//自动模式，0-false,1-true
+extern byte localtime_int;                  //存放同步的本地时间小时数
 // Instantiate a Bounce object
 Bounce debouncer_left = Bounce(); 
 Bounce debouncer_right = Bounce(); 
@@ -54,12 +61,23 @@ extern void mcu_open_weather(void);
 extern void mcu_get_system_time(void);
 extern void request_weather_serve(void);
 
+union data {
+  int v;
+  unsigned char dchar[8];
+} dvalue;
+
 void one_s() {
   
   ss++;
   light_in = false;
+  if (ss > 2147483640){  //接近int的最大值，重新记数
+    ss = 0;
+  }
   //Serial.print(ss);
   //Serial.print("\n");
+  if (percent_int > 0) {
+    percent_int--;
+  }
 }
 
 void setup() {
@@ -103,6 +121,15 @@ void setup() {
   MsTimer2::set(1000, one_s); // 用Timer2计时一秒钟，执行一次one_s函数
   MsTimer2::start();
   mcu_open_weather();//打开天气服务
+  //数据读出，放入校准时间
+  for(int i = 0; i < 4; i++) dvalue.dchar[i] = EEPROM.read(i);
+  if (dvalue.v > 0){
+    time_int = dvalue.v;
+  }else{
+    time_int = 100;
+  }
+  Serial.println(time_int);
+  auto_mode = EEPROM.read(4);
 }
 
 void loop() {
@@ -118,8 +145,24 @@ void loop() {
  int value_right = debouncer_right.read();//右开关状态，低电平则为关窗状态，检测到状态改变为高电平，且电机为停止0状态则执行开窗动作，电机状态1
   wifi_uart_service();
   myserialEvent();      // 串口接收处理
+
+  //开关窗状态检测，上报处理
   if ( stateChanged_left ) { 
     if (value_left == LOW){ //左开关状态改变低电平证明窗户开到100%了，停电机，上报状态！
+      //这里要增加校准状态检测，如果是校准中状态的开窗，要处理记录校准时间，并把校准状态置0
+      if (cali_int == 3){
+        cali_int = 0;
+        time_int = ss - ss_cali;         //记录校准的开窗总时间存入eeprom
+        //数据拆分写入eeprom
+        dvalue.v = time_int;
+        unsigned char *dpointer;
+        dpointer = dvalue.dchar;
+        for(int i = 0; i < 4; i++) {
+          EEPROM.write(i,*dpointer);
+          dpointer++;
+        }
+        mcu_dp_bool_update(DPID_CALIBRATION,false); //BOOL型数据上报;
+      }
       control_sta = 1;
       mcu_dp_enum_update(DPID_CONTROL,0x01);
       percent_sta = 100;
@@ -137,6 +180,20 @@ void loop() {
   }
   if ( stateChanged_right ) { 
     if (value_right == LOW){ //右开关状态改变低电平证明窗户关了，停电机，上报状态！
+      //这里要增加校准状态检测，如果是校准中状态的关窗，要处理记录校准时间，并把校准状态置0
+      if (cali_int == 3){
+        cali_int = 0;
+        time_int = ss - ss_cali;         //记录校准的关窗总时间存入eeprom
+        //数据拆分写入eeprom
+        dvalue.v = time_int;
+        unsigned char *dpointer;
+        dpointer = dvalue.dchar;
+        for(int i = 0; i < 4; i++) {
+          EEPROM.write(i,*dpointer);
+          dpointer++;
+        }
+        mcu_dp_bool_update(DPID_CALIBRATION,false); //BOOL型数据上报;
+      }
       control_sta = 0;
       mcu_dp_enum_update(DPID_CONTROL,0x02);
       percent_sta = 0;
@@ -152,19 +209,78 @@ void loop() {
       //Serial.print("开始开窗。\n");
     }
   }
-
-  if (mySwitch.available()) {
-    long code433 = mySwitch.getReceivedValue();
-    if (code433 == 5836257){
-      digitalWrite(MOTO1_1, LOW);
-      digitalWrite(MOTO1_2, HIGH);
-      moto_sta = 2;
-      //Serial.print("开始关窗。\n");
-    }else if (code433 == 5836258){
+  //收到校准信号处理
+  if (cali_int == 2 && moto_sta == 0) {   //如果已进入开始校准状态，开窗状态则关窗，关窗状态则开窗，进入校准中状态，记录下秒数，存入eeprom
+    ss_cali = ss;
+    cali_int = 3;
+    if (value_right == LOW ){ //右开关状态改变低电平证明窗户关了，那么开窗！
       digitalWrite(MOTO1_1, HIGH);
       digitalWrite(MOTO1_2, LOW);
       moto_sta = 1;
       //Serial.print("开始开窗。\n");
+    }else if (value_left == LOW){ //左开关状态改变低电平证明窗户开到100%了，那么关窗！
+      digitalWrite(MOTO1_1, LOW);
+      digitalWrite(MOTO1_2, HIGH);
+      moto_sta = 2;
+      //Serial.print("开始关窗。\n");
+    }
+  }else if (cali_int == 1 && moto_sta == 0){   //如果在校准准备状态，则检测左右开关状态，有开关为低电平状态则进入开始校准状态，如果左右开关都不为低电平则关窗
+    if (value_right == LOW || value_left == LOW){
+      cali_int = 2;
+    }else {
+      cali_int = 2;
+      digitalWrite(MOTO1_1, LOW);
+      digitalWrite(MOTO1_2, HIGH);
+      moto_sta = 2;
+      //Serial.print("开始关窗。\n");
+    }
+  }
+  
+  //同步百分比状态处理
+  if (percent_yun > percent_sta && moto_sta == 0){ //控制端发送的开窗百分比比现存的百分比状态高，则开窗校准秒数*两百分比相减%
+    percent_int = int(time_int * (percent_yun - percent_sta) / 100);
+    digitalWrite(MOTO1_1, HIGH);
+    digitalWrite(MOTO1_2, LOW);
+    moto_sta = 1;
+    control_sta = 2;
+    Serial.print("开始开窗-");
+    Serial.println(percent_int);
+  }else if (percent_sta > percent_yun && moto_sta == 0){ //控制端发送的开窗百分比比现存的百分比状态少，则关窗校准秒数*两百分比相减%
+    percent_int = int(time_int * (percent_sta - percent_yun) / 100);
+    digitalWrite(MOTO1_1, LOW);
+    digitalWrite(MOTO1_2, HIGH);
+    moto_sta = 2;
+    control_sta = 2;
+    Serial.print("开始关窗-");
+    Serial.println(percent_int);
+  }
+  if (percent_int == 0 && moto_sta != 0 && control_sta == 2){ //百分比到位关机处理，及上报
+    percent_sta = percent_yun;
+    digitalWrite(MOTO1_1, LOW);
+    digitalWrite(MOTO1_2, LOW);
+    moto_sta = 0;
+    mcu_dp_value_update(DPID_PERCENT_CONTROL,percent_sta); 
+  }
+  
+  //433信号接收，开关窗处理
+  if (mySwitch.available()) {
+    long code433 = mySwitch.getReceivedValue();
+    if (code433 == 5836257){
+      if ( control_sta != 0){
+        digitalWrite(MOTO1_1, LOW);
+        digitalWrite(MOTO1_2, HIGH);
+        moto_sta = 2;
+        //Serial.print("开始关窗。\n");
+      }
+      
+    }else if (code433 == 5836258){
+      if (percent_sta < 100){
+        digitalWrite(MOTO1_1, HIGH);
+        digitalWrite(MOTO1_2, LOW);
+        moto_sta = 1;
+        //Serial.print("开始开窗。\n");
+      }
+      
     }
     //Serial.print("Received ");
     Serial.print(code433);
@@ -176,7 +292,9 @@ void loop() {
        
     mySwitch.resetAvailable();
   }
-  if (ss % 120 == 0 && light_in == false) {   //5分钟检测一次光线
+
+  //以下为定时任务，光线检测，时间同步等
+  if (ss % 300 == 0 && light_in == false) {   //5分钟检测一次光线,同步一次本地时间,上报光线数据
     light_in = true;
     if (light.getData(data0,data1))
   {
@@ -199,9 +317,37 @@ void loop() {
 
   mcu_get_system_time();  //同步时间
   
-   } else if (ss % 180 == 0) { //30分钟获取一次天气，这个不好用
-    request_weather_serve();
-   }
+   } //else if (ss % 180 == 0) { //30分钟获取一次天气，这个不好用
+    //request_weather_serve();
+   //}
+
+  //自动模式处理，如果设置为自动模式，则早上9点没有特殊天气预报自动开窗，晚上18点，窗户非关闭状态则关窗,开窗关窗自动任务当天只执行一次，执行后写入全局变量，晚上23点变量清零
+  if (auto_mode == 1 && localtime_int >= 9 && auto_open == 0){
+    auto_open = 1;
+    if (control_sta == 0 && weather_sta == 0 && wind_sta == 0 && aqi_sta == 0 && pm25_sta == 0){
+      digitalWrite(MOTO1_1, HIGH);
+      digitalWrite(MOTO1_2, LOW);
+      moto_sta = 1;
+      Serial.print("开始自动开窗。\n");
+    }
+  
+  }else if (auto_mode == 1 && localtime_int >= 18 && auto_close == 0){
+    auto_close = 1;
+    if (control_sta != 0){
+      digitalWrite(MOTO1_1, LOW);
+      digitalWrite(MOTO1_2, HIGH);
+      moto_sta = 2;
+      Serial.print("开始自动关窗。\n");
+    }
+  }
+  if (localtime_int = 23){
+    if (auto_open != 0){
+      auto_open = 0;
+    }
+    if (auto_close != 0){
+      auto_close = 0;
+    }
+  }
 }
 
 void myserialEvent() {
@@ -256,7 +402,7 @@ void key_reset(void)
 {
   //mcu_network_start();
   mcu_reset_wifi();
-  delay(50);
+  //delay(50);
 
 }
 void printError(byte error)
