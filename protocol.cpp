@@ -191,20 +191,25 @@ static unsigned char dp_download_control_handle(const unsigned char value[], uns
         case 0:
         //开窗，状态设置成电机开窗状态
         moto_sta = 1;
+        control_sta = 1;
         digitalWrite(MOTO1_1, HIGH);
         digitalWrite(MOTO1_2, LOW);
-        Serial.print("open");
+        //Serial.print("open");
         break;
         
         case 1:
+        moto_sta = 0;
+        digitalWrite(MOTO1_1, LOW);
+        digitalWrite(MOTO1_2, LOW);
         break;
         
         case 2:
         //关窗，状态设置成电机关窗状态
         moto_sta = 2;
+        control_sta = 0;
         digitalWrite(MOTO1_1, LOW);
         digitalWrite(MOTO1_2, HIGH);
-        Serial.print("close");
+        //Serial.print("close");
         break;
         
         default:
@@ -239,7 +244,8 @@ static unsigned char dp_download_percent_control_handle(const unsigned char valu
     
     */
     percent_yun = int(percent_control);
-    Serial.println(percent_yun);
+    control_sta = 2;
+    //Serial.println(percent_yun);
     //处理完DP数据后应有反馈
     ret = mcu_dp_value_update(DPID_PERCENT_CONTROL,percent_control);
     if(ret == SUCCESS)
@@ -269,7 +275,7 @@ static unsigned char dp_download_calibration_handle(const unsigned char value[],
     }else {
         //校准程序开：关窗状态下开窗，开窗状态就关窗，并记录下总秒数存入内存
         cali_int = 1;
-        Serial.println("calibrationing");
+        //Serial.println("calibrationing");
     }
   
     //处理完DP数据后应有反馈
@@ -913,24 +919,24 @@ void weather_data_user_handle(char *name, unsigned char type, const unsigned cha
         }else{
           pm25_sta = 0;
         }
-        Serial.print("PM25:");
-        Serial.println(value_int);
+        //Serial.print("PM25:");
+        //Serial.println(value_int);
     }else if(my_strcmp(name, "aqi") == 0) {
         if (value_int >=150) {    //aqi>=150则不适合开窗
           aqi_sta = 1;
         }else{
           aqi_sta = 0;
         }
-        Serial.print("AQI:");
-        Serial.println(value_int);
+        //Serial.print("AQI:");
+        //Serial.println(value_int);
     }else if(my_strcmp(name, "windSpeed") == 0) {
         if (value_int > 5) {    //风力大于5级则不适合开窗
           wind_sta = 1;
         }else{
           wind_sta = 0;
         }
-        Serial.print("windSpeed:");
-        Serial.println(value_int);
+        //Serial.print("windSpeed:");
+        //Serial.println(value_int);
     }else if(my_strcmp(name, "condition") == 0) {
 //        printf("day:%d condition value is:%s\r\n", day, value_string);  //string 型
     //rain
@@ -950,7 +956,7 @@ void weather_data_user_handle(char *name, unsigned char type, const unsigned cha
       (my_strcmp(value_string, "小阵雨") == 0)   ||      
       (my_strcmp(value_string, "强阵雨") == 0)         
     ){        
-      Serial.println("rain");
+      //Serial.println("rain");
       weather_sta = 1;
     }
     //cloudy   
@@ -959,7 +965,7 @@ void weather_data_user_handle(char *name, unsigned char type, const unsigned cha
       (my_strcmp(value_string, "阴") == 0)     ||  
       (my_strcmp(value_string, "雾") == 0)       
     ){      
-      Serial.println("cloudy");
+      //Serial.println("cloudy");
       weather_sta = 0;
     }
     //thunder //  
@@ -968,7 +974,7 @@ void weather_data_user_handle(char *name, unsigned char type, const unsigned cha
       (my_strcmp(value_string, "雷暴") == 0)    ||  
       (my_strcmp(value_string, "雷电") == 0)      
     ){      
-      Serial.println("thunder");
+      //Serial.println("thunder");
       weather_sta = 1;
     }
     //snows          
@@ -983,7 +989,7 @@ void weather_data_user_handle(char *name, unsigned char type, const unsigned cha
       (my_strcmp(value_string, "雨夹雪") == 0)   ||  
       (my_strcmp(value_string, "暴雪") == 0)      
     ){      
-      Serial.println("snows");
+      //Serial.println("snows");
       weather_sta = 1;
     }
     //sunny          
@@ -991,12 +997,12 @@ void weather_data_user_handle(char *name, unsigned char type, const unsigned cha
       (my_strcmp(value_string, "晴") == 0)     ||  
       (my_strcmp(value_string, "少云") == 0)          
     ){      
-      Serial.println("sunny");
+      //Serial.println("sunny");
       weather_sta = 0;
     }
     //没有列到的条件都当成是晴天，
     else{   
-      Serial.println("All wrong");
+      //Serial.println("All wrong");
       weather_sta = 0;
     }
     }

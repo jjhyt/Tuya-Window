@@ -5,6 +5,7 @@
 //3.实现百分比控制，校准的运行时长数据和百分比数据作为全局变量，收到百分比控制数据后和已存在的百分比数据对比（开关控制时注意，关百分比数据存为0，开百分比数据存为100）
 //如果下发数据大于现存的百分比数据则开窗百分之它们想减之后的值*总校准秒数！反之就关窗这么多！
 //天气逻辑怎么实现呢？每5分钟同步一下时间，到早上9点如果空气质量还行，没有雨雪，风不大则开窗？，晚上6点如果窗户还开着就关窗？或者和光线传感器联动
+//还差个光线传感器数据上传，要改动DP点，原来没打算做这个！其它功能都可以实机测试了！
 
 #include "mcu_api.h"
 #include "protocol.h"
@@ -29,12 +30,13 @@ uint16_t lastlux = 0;            //光线
 int batteryPcnt ;
 int ss = 0;                          //计秒变量
 int ss_cali;                         //用来放校准时的初始计秒数据
+int ss_hui;                          //回退时间计秒
 int percent_int;                     //存放百分比开窗或关窗秒数
 
 double lux;    // 光线
 byte auto_open; //自动开窗执行0-未执行 1-已执行
 byte auto_close; //自动关窗执行0-未执行 1-已执行
-extern int moto_sta; //电机开关状态0=停1=开窗2=关窗
+extern int moto_sta; //电机开关状态0=停1=开窗2=关窗3=回退
 extern int control_sta;//窗户开关状态0=关1=开2=百分比状态
 extern int percent_sta; //窗户百分比状态
 extern int weather_sta ;//天气状况是否适合开窗
@@ -106,9 +108,9 @@ void setup() {
   
   if (light.getID(ID))
   {
-    Serial.print("Got factory ID: 0X");
-    Serial.print(ID,HEX);
-    Serial.println(", should be 0X5X");
+    //Serial.print("Got factory ID: 0X");
+    //Serial.print(ID,HEX);
+    //Serial.println(", should be 0X5X");
   } else {
     byte error = light.getError();
     printError(error);
@@ -128,7 +130,7 @@ void setup() {
   }else{
     time_int = 100;
   }
-  Serial.println(time_int);
+  //Serial.println(time_int);
   auto_mode = EEPROM.read(4);
 }
 
@@ -148,7 +150,7 @@ void loop() {
 
   //开关窗状态检测，上报处理
   if ( stateChanged_left ) { 
-    if (value_left == LOW){ //左开关状态改变低电平证明窗户开到100%了，停电机，上报状态！
+    if (value_left == LOW){ //左开关状态改变低电平证明窗户开到100%了，回退电机6秒，上报状态！
       //这里要增加校准状态检测，如果是校准中状态的开窗，要处理记录校准时间，并把校准状态置0
       if (cali_int == 3){
         cali_int = 0;
@@ -164,12 +166,13 @@ void loop() {
         mcu_dp_bool_update(DPID_CALIBRATION,false); //BOOL型数据上报;
       }
       control_sta = 1;
-      mcu_dp_enum_update(DPID_CONTROL,0x01);
+      mcu_dp_enum_update(DPID_CONTROL,0x00);
       percent_sta = 100;
       mcu_dp_value_update(DPID_PERCENT_CONTROL,percent_sta); 
       digitalWrite(MOTO1_1, LOW);
-      digitalWrite(MOTO1_2, LOW);
-      moto_sta = 0;
+      digitalWrite(MOTO1_2, HIGH);
+      moto_sta = 3;
+      ss_hui = ss;
       //Serial.print("窗户状态变为打开。\n");
     }else if(value_left == HIGH && moto_sta == 0){ //左开关状态改变为高电平且电机为停止状态，开电机关窗，电机状态变2
       digitalWrite(MOTO1_1, LOW);
@@ -179,7 +182,7 @@ void loop() {
     }
   }
   if ( stateChanged_right ) { 
-    if (value_right == LOW){ //右开关状态改变低电平证明窗户关了，停电机，上报状态！
+    if (value_right == LOW){ //右开关状态改变低电平证明窗户关了，回退电机，上报状态！
       //这里要增加校准状态检测，如果是校准中状态的关窗，要处理记录校准时间，并把校准状态置0
       if (cali_int == 3){
         cali_int = 0;
@@ -198,9 +201,10 @@ void loop() {
       mcu_dp_enum_update(DPID_CONTROL,0x02);
       percent_sta = 0;
       mcu_dp_value_update(DPID_PERCENT_CONTROL,percent_sta); 
-      digitalWrite(MOTO1_1, LOW);
+      digitalWrite(MOTO1_1, HIGH);
       digitalWrite(MOTO1_2, LOW);
-      moto_sta = 0;
+      moto_sta = 3;
+      ss_hui = ss;
       //Serial.print("窗户状态变为关闭。\n");
     }else if(value_right == HIGH && moto_sta == 0){ //右开关状态改变为高电平且电机为停止状态，开电机开窗，电机状态变1
       digitalWrite(MOTO1_1, HIGH);
@@ -209,6 +213,16 @@ void loop() {
       //Serial.print("开始开窗。\n");
     }
   }
+  //开关窗到位后的回退停止处理
+  if (moto_sta == 3 && ss_hui != 0 && ss > ss_hui){
+    if (ss - ss_hui >= 6){     //加退6秒
+      digitalWrite(MOTO1_1, LOW);
+      digitalWrite(MOTO1_2, LOW);
+      moto_sta = 0;
+      ss_hui = 0;
+    }
+  }
+  
   //收到校准信号处理
   if (cali_int == 2 && moto_sta == 0) {   //如果已进入开始校准状态，开窗状态则关窗，关窗状态则开窗，进入校准中状态，记录下秒数，存入eeprom
     ss_cali = ss;
@@ -237,22 +251,22 @@ void loop() {
   }
   
   //同步百分比状态处理
-  if (percent_yun > percent_sta && moto_sta == 0){ //控制端发送的开窗百分比比现存的百分比状态高，则开窗校准秒数*两百分比相减%
+  if (percent_yun > percent_sta && moto_sta == 0 && control_sta == 2){ //控制端发送的开窗百分比比现存的百分比状态高，则开窗校准秒数*两百分比相减%
     percent_int = int(time_int * (percent_yun - percent_sta) / 100);
     digitalWrite(MOTO1_1, HIGH);
     digitalWrite(MOTO1_2, LOW);
     moto_sta = 1;
     control_sta = 2;
-    Serial.print("开始开窗-");
-    Serial.println(percent_int);
-  }else if (percent_sta > percent_yun && moto_sta == 0){ //控制端发送的开窗百分比比现存的百分比状态少，则关窗校准秒数*两百分比相减%
+    //Serial.print("开始开窗-");
+    //Serial.println(percent_int);
+  }else if (percent_sta > percent_yun && moto_sta == 0 && control_sta == 2){ //控制端发送的开窗百分比比现存的百分比状态少，则关窗校准秒数*两百分比相减%
     percent_int = int(time_int * (percent_sta - percent_yun) / 100);
     digitalWrite(MOTO1_1, LOW);
     digitalWrite(MOTO1_2, HIGH);
     moto_sta = 2;
     control_sta = 2;
-    Serial.print("开始关窗-");
-    Serial.println(percent_int);
+    //Serial.print("开始关窗-");
+    //Serial.println(percent_int);
   }
   if (percent_int == 0 && moto_sta != 0 && control_sta == 2){ //百分比到位关机处理，及上报
     percent_sta = percent_yun;
@@ -266,7 +280,8 @@ void loop() {
   if (mySwitch.available()) {
     long code433 = mySwitch.getReceivedValue();
     if (code433 == 5836257){
-      if ( control_sta != 0){
+      if (value_right == HIGH){
+      //if ( control_sta != 0){
         digitalWrite(MOTO1_1, LOW);
         digitalWrite(MOTO1_2, HIGH);
         moto_sta = 2;
@@ -274,7 +289,8 @@ void loop() {
       }
       
     }else if (code433 == 5836258){
-      if (percent_sta < 100){
+      if (value_left == HIGH){
+      //if (percent_sta < 100){
         digitalWrite(MOTO1_1, HIGH);
         digitalWrite(MOTO1_2, LOW);
         moto_sta = 1;
@@ -304,8 +320,8 @@ void loop() {
     //Serial.print(data1);
     boolean good;  // True if neither sensor is saturated
     good = light.getLux(gain,ms,data0,data1,lux);
-    Serial.print("lux: ");
-    Serial.println(lux);
+    //Serial.print("lux: ");
+    //Serial.println(lux);
     //if (good) Serial.println(" (good)"); else Serial.println(" (BAD)");
   }
   else
@@ -328,7 +344,7 @@ void loop() {
       digitalWrite(MOTO1_1, HIGH);
       digitalWrite(MOTO1_2, LOW);
       moto_sta = 1;
-      Serial.print("开始自动开窗。\n");
+      //Serial.print("开始自动开窗。\n");
     }
   
   }else if (auto_mode == 1 && localtime_int >= 18 && auto_close == 0){
@@ -337,7 +353,7 @@ void loop() {
       digitalWrite(MOTO1_1, LOW);
       digitalWrite(MOTO1_2, HIGH);
       moto_sta = 2;
-      Serial.print("开始自动关窗。\n");
+      //Serial.print("开始自动关窗。\n");
     }
   }
   if (localtime_int = 23){
@@ -358,14 +374,6 @@ void myserialEvent() {
   }
 }
 
-void reportWindowControl(){
-  unsigned char window_con = 0x01;     //open的16进制码 close为0x02
-  mcu_dp_enum_update(DPID_CONTROL,window_con);       //枚举型数据上报;
-  mcu_dp_enum_update(DPID_LEFT_CONTROL,0x02);       //枚举型数据上报;
-  mcu_dp_value_update(DPID_RESIDUAL_ELECTRICITY,88); //VALUE型数据上报;
-  mcu_dp_value_update(DPID_PERCENT_CONTROL,100); //VALUE型数据上报;
-  mcu_dp_bool_update(DPID_CALIBRATION,true); //BOOL型数据上报;
-}
 
 //电池检测
 void batterylevel(void)
@@ -397,7 +405,7 @@ void batterylevel(void)
     lastVcc = batteryV;
   }
 }
-
+//重新配网按钮，暂时未用到
 void key_reset(void)
 {
   //mcu_network_start();
