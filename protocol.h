@@ -301,7 +301,9 @@ BLE_test_result内部有#err提示,完成函数后请删除该#err
 //自动模式(可下发可上报)
 //备注:
 #define DPID_CONTROL_MODE 110
-
+//光线(只上报)
+//备注:
+#define DPID_LUX 111
 
 /**
  * @brief  串口发送数据

@@ -94,6 +94,7 @@ DOWNLOAD_CMD_S download_cmd[] =
   {DPID_CURTAIN_PERCENT, DP_TYPE_VALUE},
   {DPID_CURTAIN_CALIBRATION, DP_TYPE_BOOL},
   {DPID_CONTROL_MODE, DP_TYPE_BOOL},
+  {DPID_LUX, DP_TYPE_VALUE},
 };
 
 
@@ -162,7 +163,7 @@ void all_data_update(void)
     mcu_dp_value_update(DPID_CURTAIN_PERCENT,当前窗帘); //VALUE型数据上报;
     mcu_dp_bool_update(DPID_CURTAIN_CALIBRATION,当前窗帘校准); //BOOL型数据上报;
     mcu_dp_bool_update(DPID_CONTROL_MODE,当前自动模式); //BOOL型数据上报;
-
+    mcu_dp_value_update(DPID_LUX,当前光线); //VALUE型数据上报;
     */
 }
 

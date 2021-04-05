@@ -215,7 +215,7 @@ void loop() {
   }
   //开关窗到位后的回退停止处理
   if (moto_sta == 3 && ss_hui != 0 && ss > ss_hui){
-    if (ss - ss_hui >= 6){     //加退6秒
+    if (ss - ss_hui >= 6){     //回退6秒
       digitalWrite(MOTO1_1, LOW);
       digitalWrite(MOTO1_2, LOW);
       moto_sta = 0;
@@ -322,6 +322,7 @@ void loop() {
     good = light.getLux(gain,ms,data0,data1,lux);
     //Serial.print("lux: ");
     //Serial.println(lux);
+    mcu_dp_value_update(DPID_LUX,long(lux)); //VALUE型数据上报;
     //if (good) Serial.println(" (good)"); else Serial.println(" (BAD)");
   }
   else

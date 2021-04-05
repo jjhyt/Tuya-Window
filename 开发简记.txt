@@ -204,3 +204,8 @@ void request_weather_serve(void)
 }
 
 写入读取eeprom参考：https://www.geek-workshop.com/thread-2323-1-1.html
+
+增加DP点后要修改的地方 ：DOWNLOAD_CMD_S 这段在protocol.c
+all_data_update 上报所有数据点，一般用不到
+dp_download_control_handle   如果是下发型DP，这里会增加函数，注意加上
+protocol.h  里有个 #define DPID_CONTROL_MODE 110 要加上DP点定义
